@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --background: 44 87% 94%;
+    --foreground: 202 11% 40%;
+    --card: 48 45% 97%;
+    --card-foreground: 202 11% 32%;
+    --popover: 48 45% 97%;
+    --popover-foreground: 202 11% 32%;
+    --primary: 81 36% 52%;
+    --primary-foreground: 48 45% 98%;
+    --secondary: 43 30% 90%;
+    --secondary-foreground: 202 11% 34%;
+    --muted: 43 25% 91%;
+    --muted-foreground: 202 9% 50%;
+    --accent: 81 36% 52%;
+    --accent-foreground: 48 45% 98%;
+    --destructive: 4 70% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 48 12% 83%;
+    --input: 48 12% 83%;
+    --ring: 81 36% 52%;
+    --radius: 0.9rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, sans-serif;
+    background: hsl(var(--background));
+  }
+
+  body {
+    @apply min-w-[320px] bg-background text-foreground antialiased;
+    margin: 0;
+  }
+
+  button,
+  a,
+  [role="button"] {
+    cursor: pointer;
+  }
+
+  button:focus-visible,
+  a:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 3px;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .workspace-grid {
+    background-image: radial-gradient(hsl(var(--foreground) / 0.1) 0.7px, transparent 0.7px);
+    background-size: 22px 22px;
+  }
+}
+
+.brand-mark {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border: 7px solid hsl(var(--foreground));
+  border-top-color: transparent;
+  border-radius: 999px;
+  transform: rotate(32deg);
+}
+
+.brand-mark-small {
+  width: 20px;
+  height: 20px;
+  border-width: 5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
