@@ -9,6 +9,8 @@
  */
 
 import type * as classes from "../classes.js";
+import type * as generateLesson from "../generateLesson.js";
+import type * as synchronizeEvents from "../synchronizeEvents.js";
 
 import type {
   ApiFromModules,
@@ -18,6 +20,8 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   classes: typeof classes;
+  generateLesson: typeof generateLesson;
+  synchronizeEvents: typeof synchronizeEvents;
 }>;
 
 /**

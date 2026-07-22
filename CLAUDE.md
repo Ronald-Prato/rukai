@@ -11,3 +11,10 @@ Convex agent skills for common tasks can be installed by running
 `npx convex ai-files install`.
 
 <!-- convex-ai-end -->
+
+## Product vision
+
+Before planning, implementing, or reviewing product changes, always read
+[`vision.md`](vision.md). Treat it as the project's product north star and keep
+all decisions aligned with the interactive, narrated, and adaptive learning
+experience described there.

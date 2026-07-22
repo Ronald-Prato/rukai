@@ -4,10 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "convex dev --start 'vite --open'",
+    "dev": "convex dev --start vite",
     "build": "tsc -b && vite build",
+    "generate:narrations": "bun scripts/generate-narrations.ts",
     "lint": "tsc && eslint .  --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "bun test"
   },
   "dependencies": {
     "@radix-ui/react-icons": "^1.3.0",
@@ -15,6 +17,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "convex": "^1.36.1",
+    "openai": "^6.48.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^2.3.0"

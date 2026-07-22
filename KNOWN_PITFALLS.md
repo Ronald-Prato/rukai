@@ -5,3 +5,17 @@
 - A Convex project and deployment are separate resources; create and select both before running `convex dev --once`. The reference `dev` is reserved, so use a name such as `development`.
 - Keep `.env.local` private. Vite only exposes variables prefixed with `VITE_` to the client.
 - Interactive controls need visible focus states, pointer cursors, and mobile-sized hit areas.
+- Keep `bun:test` files outside `src/`; the application TypeScript project compiles everything under `src` without Bun's test globals.
+- Do not model an interaction reveal as an immediate audio pause. Show the control at its timeline event, let its prompt finish narrating, and advance only after both narration and response are complete.
+- OpenAI's speech endpoint returns audio bytes without a usage block. Derive a clearly marked estimate from the generated artifact instead of presenting invented token counts as exact billing data.
+- Never schedule visual reveals from timestamps guessed before TTS or require literal anchor phrases during authoring. Transcribe the finished MP3 with word timestamps, then align each visual element semantically to a validated transcript word index.
+- Contract validation failures must name the first failed rule and slide in the class error, generation log, and Convex execution log; a boolean validator plus a generic message makes model-output defects impossible to diagnose.
+- Treat title and body word counts as authoring targets with a small technical tolerance. Rejecting an otherwise valid class for a two-word visual-copy deviation creates needless generation failures; keep exact validation for runtime and synchronization invariants.
+- Repair invalid authoring output before starting images or audio: feed the exact validation error and previous structured object back to the text model for a bounded retry, and include every attempt in usage totals.
+- Keep lesson playback fixed at 1× while visual events use audio timestamps; variable playback controls can make the perceived narration/render synchronization inconsistent.
+- Resolve Convex storage URLs when reading a class; do not persist signed URLs in lesson documents because they can expire.
+- Keep generation logs in their own indexed table. Updating a growing log array on the class document causes unnecessary rewrites and eventually hits document limits.
+- Do not collapse generated lessons into repeated title, paragraph, and image heroes. Keep composition, structured visual kind, palette tone, and timed content as explicit output fields, and cap title/body length in the generation contract.
+- Keep the lesson timeline hidden until the canvas itself is hovered. Hovering or focusing a slide interaction must not reveal the timeline over that control.
+- Generated slides must favor strong foreground/background contrast, keep lists as single-column vertical sequences, and use spacing or subtle separators before bordered cards, pills, or repeated containers.
+- Deleting a class must also delete its slide documents, generation logs, images, and audio. Generation must stop persisting new slides when the parent class no longer exists.

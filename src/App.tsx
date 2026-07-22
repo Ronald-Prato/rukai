@@ -1,120 +1,192 @@
-import { MagnifyingGlassIcon, PlusIcon } from "@radix-ui/react-icons";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useQuery } from "convex/react";
-import { useState } from "react";
 import { api } from "../convex/_generated/api";
-import { AppSidebar } from "@/components/AppSidebar";
-import { Button } from "@/components/ui/button";
+import {
+  ClassCatalog,
+  FONT_FAMILIES,
+  type FontFamily,
+} from "@/components/ClassCatalog";
+import { LessonPlayer } from "@/components/LessonPlayer";
+import { duneLesson, type LessonDefinition } from "@/presentation";
 
-const starters = [
-  { label: "Documento", detail: "PDF, texto o apuntes", icon: "Aa" },
-  { label: "Sitio web", detail: "Aprende desde un enlace", icon: "↗" },
-  { label: "Tema libre", detail: "Empieza con una idea", icon: "✦" },
-];
+function classIdFromPath() {
+  const match = window.location.pathname.match(/^\/classes\/([^/]+)\/?$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
 
-export default function App() {
-  const [collapsed, setCollapsed] = useState(false);
-  const classes = useQuery(api.classes.list);
+function storedFontFamily(): FontFamily {
+  try {
+    const stored = window.localStorage.getItem("rukai.font-family");
+    if (FONT_FAMILIES.some(({ value }) => value === stored)) {
+      return stored as FontFamily;
+    }
+  } catch {
+    // Keep the default when storage is unavailable.
+  }
+  return "avenir";
+}
+
+function GeneratedLesson({ id, onBack }: { id: string; onBack: () => void }) {
+  const generated = useQuery(api.classes.get, { id });
+  const logs = useQuery(api.classes.logs, { id });
+  const lesson = useMemo<LessonDefinition | null>(() => {
+    if (!generated || generated.status !== "ready") return null;
+    return {
+      id: generated._id,
+      title: generated.title,
+      summary: generated.summary ?? generated.prompt,
+      theme: generated.theme ?? "ember-ocean",
+      voices: ["marin"],
+      slides: generated.slides.map((slide) => ({
+        phase: slide.phase,
+        layout: slide.layout,
+        tone: slide.tone ?? "dark",
+        visualKind: slide.visualKind ?? (slide.imageUrl ? "image" : "list"),
+        eyebrow: slide.eyebrow,
+        title: slide.title,
+        body: slide.body,
+        narration: slide.narration,
+        content:
+          slide.content ??
+          slide.facts.map((fact, index) => ({
+            label: fact,
+            value: String(index + 1).padStart(2, "0"),
+            detail: "",
+          })),
+        facts: slide.facts,
+        events: slide.events,
+        imageUrl: slide.imageUrl ?? undefined,
+        audioByVoice: slide.audioUrl ? { marin: slide.audioUrl } : undefined,
+      })),
+      metrics: {
+        generationDurationMs: generated.generationDurationMs ?? 0,
+        totalTokens: generated.totalTokens ?? 0,
+        costUsd: generated.costUsd ?? 0,
+        models: generated.models ?? [],
+        usageEstimated: generated.usageEstimated ?? false,
+      },
+    };
+  }, [generated]);
+
+  if (generated === undefined) {
+    return <CenteredMessage title="Cargando clase…" onBack={onBack} />;
+  }
+  if (generated === null) {
+    return <CenteredMessage title="Esta clase no existe" onBack={onBack} />;
+  }
+  if (lesson) {
+    return <LessonPlayer lesson={lesson} onBack={onBack} />;
+  }
 
   return (
-    <div className="min-h-screen bg-background">
-      <AppSidebar
-        collapsed={collapsed}
-        onToggle={() => setCollapsed((value) => !value)}
+    <main className="grid min-h-screen place-items-center bg-[#ebe4d5] p-5">
+      <section className="w-full max-w-lg rounded-[28px] border border-black/10 bg-[#faf8f2] p-7 shadow-xl">
+        <button
+          className="text-sm font-semibold text-black/45"
+          onClick={onBack}
+        >
+          ← Todas las clases
+        </button>
+        <p className="mt-10 text-[10px] font-bold uppercase tracking-[.16em] text-[#b45c2a]">
+          {generated.status === "failed"
+            ? "Generación detenida"
+            : "Generando clase"}
+        </p>
+        <h1 className="mt-3 font-serif text-4xl tracking-[-.05em]">
+          {generated.title}
+        </h1>
+        <div className="mt-7 rounded-2xl border border-black/10 bg-black/[.025] p-4">
+          <ol className="grid gap-3">
+            {logs?.map((log, index) => (
+              <li
+                className={`flex items-center justify-between gap-4 text-sm ${index === logs.length - 1 ? "font-semibold" : "text-black/40"}`}
+                key={log._id}
+              >
+                <span>{log.label}</span>
+                <time className="text-xs tabular-nums">
+                  +{Math.floor((log.createdAt - generated.createdAt) / 1_000)} s
+                </time>
+              </li>
+            ))}
+          </ol>
+        </div>
+        {generated.error && (
+          <p className="mt-4 text-sm leading-relaxed text-red-700">
+            {generated.error}
+          </p>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function CenteredMessage({
+  title,
+  onBack,
+}: {
+  title: string;
+  onBack: () => void;
+}) {
+  return (
+    <main className="grid min-h-screen place-items-center bg-[#ebe4d5] p-5">
+      <div className="text-center">
+        <h1 className="font-serif text-4xl">{title}</h1>
+        <button
+          className="mt-5 text-sm font-semibold text-[#a94d20]"
+          onClick={onBack}
+        >
+          Volver a las clases
+        </button>
+      </div>
+    </main>
+  );
+}
+
+export default function App() {
+  const [classId, setClassId] = useState(classIdFromPath);
+  const [fontFamily, setFontFamily] = useState(storedFontFamily);
+
+  useLayoutEffect(() => {
+    document.documentElement.dataset.fontFamily = fontFamily;
+    try {
+      window.localStorage.setItem("rukai.font-family", fontFamily);
+    } catch {
+      // The font still applies for the current session.
+    }
+  }, [fontFamily]);
+
+  useEffect(() => {
+    const updateRoute = () => setClassId(classIdFromPath());
+    window.addEventListener("popstate", updateRoute);
+    return () => window.removeEventListener("popstate", updateRoute);
+  }, []);
+
+  const navigate = (id: string | null) => {
+    const nextPath = id ? `/classes/${encodeURIComponent(id)}` : "/";
+    window.history.pushState({}, "", nextPath);
+    setClassId(id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  if (!classId) {
+    return (
+      <ClassCatalog
+        fontFamily={fontFamily}
+        onFontFamilyChange={setFontFamily}
+        onOpen={(id) => navigate(id)}
       />
-
-      <main
-        className={`min-h-screen transition-[padding] duration-300 ${collapsed ? "md:pl-[76px]" : "md:pl-60"}`}
-      >
-        <header className="flex h-16 items-center justify-between border-b border-border/70 px-5 md:px-10">
-          <button
-            className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground md:hidden"
-            onClick={() => setCollapsed(false)}
-            aria-label="Abrir menú"
-          >
-            <span className="brand-mark brand-mark-small" aria-hidden="true" />
-            rukai
-          </button>
-          <span className="hidden text-sm text-muted-foreground md:block">
-            Tu estudio de aprendizaje
-          </span>
-          <Button variant="outline" size="sm" className="gap-2 bg-card/70">
-            <MagnifyingGlassIcon />
-            <span className="hidden sm:inline">Buscar</span>
-            <kbd className="hidden rounded border border-border bg-background px-1.5 text-[10px] text-muted-foreground lg:inline">
-              ⌘ K
-            </kbd>
-          </Button>
-        </header>
-
-        <section className="workspace-grid px-5 py-12 sm:px-8 md:px-12 md:py-20">
-          <div className="mx-auto max-w-5xl">
-            <div className="max-w-2xl">
-              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-primary">
-                Estudio
-              </p>
-              <h1 className="text-balance text-4xl font-medium tracking-[-0.045em] text-foreground sm:text-5xl md:text-6xl">
-                Convierte cualquier tema en una clase viva.
-              </h1>
-              <p className="mt-5 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">
-                Reúne tus fuentes y deja que Rukai las transforme en una
-                experiencia clara, visual e interactiva.
-              </p>
-              <Button size="lg" className="mt-8 gap-2 rounded-full px-6 shadow-none">
-                <PlusIcon /> Nueva clase
-              </Button>
-            </div>
-
-            <div className="mt-16 grid gap-3 sm:grid-cols-3">
-              {starters.map((starter) => (
-                <button
-                  key={starter.label}
-                  className="group flex cursor-pointer items-center gap-4 rounded-2xl border border-border bg-card/75 p-4 text-left transition hover:-translate-y-0.5 hover:border-primary/60 hover:bg-card"
-                >
-                  <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-secondary text-sm font-semibold text-foreground transition group-hover:bg-primary group-hover:text-primary-foreground">
-                    {starter.icon}
-                  </span>
-                  <span>
-                    <span className="block text-sm font-medium text-foreground">
-                      {starter.label}
-                    </span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">
-                      {starter.detail}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            <section className="mt-20" aria-labelledby="recent-title">
-              <div className="mb-5 flex items-end justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                    Biblioteca
-                  </p>
-                  <h2 id="recent-title" className="mt-2 text-2xl font-medium tracking-tight">
-                    Clases recientes
-                  </h2>
-                </div>
-                <Button variant="ghost" size="sm">Ver todas</Button>
-              </div>
-
-              <div className="rounded-3xl border border-dashed border-border bg-card/45 px-6 py-12 text-center sm:px-10">
-                <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-secondary text-primary">
-                  ✦
-                </span>
-                <h3 className="mt-4 text-base font-medium">
-                  {classes?.length ? `${classes.length} clases listas` : "Tu primera clase empieza aquí"}
-                </h3>
-                <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-                  {classes?.length
-                    ? "Continúa donde lo dejaste desde tu biblioteca."
-                    : "Añade una fuente o escribe un tema. Rukai organizará el resto contigo."}
-                </p>
-              </div>
-            </section>
-          </div>
-        </section>
-      </main>
-    </div>
+    );
+  }
+  if (classId === duneLesson.id) {
+    return (
+      <LessonPlayer
+        key={duneLesson.id}
+        lesson={duneLesson}
+        onBack={() => navigate(null)}
+      />
+    );
+  }
+  return (
+    <GeneratedLesson key={classId} id={classId} onBack={() => navigate(null)} />
   );
 }
