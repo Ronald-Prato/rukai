@@ -25,8 +25,17 @@ export type SlideContentItem = {
   detail: string;
 };
 
+export type LessonInteraction = {
+  kind: "ready" | "single_choice" | "true_false" | "multiple_choice";
+  prompt: string;
+  ctaLabel: string;
+  options: readonly string[];
+  correctOptionIndexes: readonly number[];
+  explanation: string;
+};
+
 export type PresentationSlide = {
-  phase?: "intro" | "topic";
+  phase?: "intro" | "content" | "closing";
   layout?: "hero" | "split" | "focus" | "cards" | "chain";
   tone?: SlideTone;
   visualKind?: VisualKind;
@@ -39,6 +48,7 @@ export type PresentationSlide = {
   imageUrl?: string;
   audioByVoice?: Readonly<Record<string, string>>;
   events: readonly PresentationEvent[];
+  interaction?: LessonInteraction;
 };
 
 export type LessonMetrics = {
@@ -70,6 +80,7 @@ export const slides = [
       { id: "eyebrow", at: 0, label: "Tema" },
       { id: "title", at: 0.7, label: "Título" },
       { id: "body", at: 3, label: "Introducción" },
+      { id: "interaction", at: 8, label: "Tu señal", kind: "interaction" },
     ],
   },
   {
@@ -97,7 +108,6 @@ export const slides = [
       { id: "title", at: 0.8, label: "Título" },
       { id: "body", at: 3, label: "Consecuencia" },
       { id: "visual", at: 5.5, label: "Red" },
-      { id: "interaction", at: 11, label: "Tu turno", kind: "interaction" },
     ],
   },
   {
@@ -112,6 +122,7 @@ export const slides = [
       { id: "body", at: 3.2, label: "Función" },
       { id: "visual", at: 5.8, label: "Especia" },
       { id: "nodes", at: 8, label: "Efectos" },
+      { id: "interaction", at: 2.5, label: "Pregunta", kind: "interaction" },
     ],
   },
   {
@@ -179,7 +190,7 @@ export const duneLesson: LessonDefinition = {
     return {
       ...slide,
       events,
-      phase: index < 3 ? "intro" : "topic",
+      phase: index === 0 ? "intro" : index === 4 ? "closing" : "content",
       layout: duneLayouts[index],
       tone: duneTones[index],
       visualKind: duneVisuals[index],
@@ -201,6 +212,27 @@ export const duneLesson: LessonDefinition = {
       audioByVoice: Object.fromEntries(
         voices.map((voice) => [voice, narrationUrl(index, voice)]),
       ),
+      interaction:
+        index === 0
+          ? {
+              kind: "ready",
+              prompt: "Cada decisión puede cambiar el destino de un imperio.",
+              ctaLabel: "Entrar a Arrakis",
+              options: [],
+              correctOptionIndexes: [],
+              explanation: "",
+            }
+          : index === 3
+            ? {
+                kind: "true_false",
+                prompt: "La especia solo se encuentra en Arrakis.",
+                ctaLabel: "Responder",
+                options: ["Verdadero", "Falso"],
+                correctOptionIndexes: [0],
+                explanation:
+                  "La melange solo existe en Arrakis, por eso controlar el planeta concentra tanto poder.",
+              }
+            : undefined,
     };
   }),
   metrics: {

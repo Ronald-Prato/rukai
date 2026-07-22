@@ -1,9 +1,13 @@
 import {
   ArrowLeftIcon,
+  CheckIcon,
+  Cross2Icon,
   PauseIcon,
   PlayIcon,
   ReloadIcon,
+  Share1Icon,
   SpeakerLoudIcon,
+  SpeakerOffIcon,
   StopIcon,
 } from "@radix-ui/react-icons";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
@@ -14,6 +18,7 @@ import {
   formatPlaybackTime,
   visibleEventIds,
   type LessonDefinition,
+  type LessonInteraction,
   type LessonTheme,
   type PresentationEvent,
   type PresentationSlide,
@@ -28,6 +33,20 @@ type NarrationState =
   | "finished";
 
 const NEXT_SLIDE_DELAY_MS = 350;
+
+type LessonResponse = {
+  selectedOptionIndexes: number[];
+  correct: boolean;
+};
+
+function sameOptions(left: readonly number[], right: readonly number[]) {
+  const sortedLeft = [...left].sort((a, b) => a - b);
+  const sortedRight = [...right].sort((a, b) => a - b);
+  return (
+    sortedLeft.length === sortedRight.length &&
+    sortedLeft.every((value, index) => value === sortedRight[index])
+  );
+}
 
 function sceneClass(visible: boolean, scale = false) {
   return `timeline-element${scale ? " timeline-element-scale" : ""}${visible ? " is-visible" : ""}`;
@@ -509,6 +528,179 @@ function Timeline({
   );
 }
 
+function InteractionPanel({
+  interaction,
+  completed,
+  selectedOptions,
+  narrationFinished,
+  onToggleOption,
+  onSubmit,
+}: {
+  interaction: LessonInteraction;
+  completed: boolean;
+  selectedOptions: readonly number[];
+  narrationFinished: boolean;
+  onToggleOption: (optionIndex: number) => void;
+  onSubmit: (optionIndexes?: readonly number[]) => void;
+}) {
+  const multiple = interaction.kind === "multiple_choice";
+
+  return (
+    <div className="slide-interactive timeline-element is-visible absolute inset-x-4 bottom-20 z-40 max-h-[calc(100%-6rem)] overflow-y-auto rounded-2xl border border-white/15 bg-[#19120c]/95 p-4 shadow-2xl backdrop-blur-md sm:inset-x-8 sm:p-5">
+      <p className="text-[9px] font-bold uppercase tracking-[.2em] text-[#dfa763]">
+        {interaction.kind === "ready" ? "Tu señal" : "Tu turno"}
+      </p>
+      <h3 className="mt-1 max-w-3xl text-balance font-serif text-[clamp(1.35rem,3vw,2rem)] leading-tight">
+        {interaction.prompt}
+      </h3>
+
+      {interaction.kind === "ready" ? (
+        <Button
+          size="lg"
+          className="mt-4 min-h-12 rounded-full bg-[#df7c3d] px-8 text-[#160e08] hover:bg-[#ef955b]"
+          onClick={() => onSubmit()}
+          disabled={completed}
+        >
+          {completed ? "Señal recibida ✓" : interaction.ctaLabel}
+        </Button>
+      ) : (
+        <>
+          {multiple && !completed && (
+            <p className="mt-2 text-xs text-white/55">
+              Puedes elegir más de una respuesta.
+            </p>
+          )}
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {interaction.options.map((option, optionIndex) => {
+              const selected = selectedOptions.includes(optionIndex);
+              return (
+                <button
+                  className={`min-h-12 rounded-xl border px-4 py-3 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#dfa763] ${
+                    selected
+                      ? "border-[#dfa763] bg-[#dfa763]/20 text-white"
+                      : "border-white/15 bg-white/5 text-white/80 hover:border-white/30 hover:bg-white/10"
+                  }`}
+                  key={`${option}-${optionIndex}`}
+                  onClick={() =>
+                    multiple
+                      ? onToggleOption(optionIndex)
+                      : onSubmit([optionIndex])
+                  }
+                  disabled={completed}
+                  aria-pressed={selected}
+                >
+                  <span className="mr-2 text-[#dfa763]">
+                    {String.fromCharCode(65 + optionIndex)}.
+                  </span>
+                  {option}
+                </button>
+              );
+            })}
+          </div>
+          {multiple && (
+            <Button
+              size="lg"
+              className="mt-4 min-h-11 rounded-full bg-[#df7c3d] px-8 text-[#160e08] hover:bg-[#ef955b]"
+              onClick={() => onSubmit(selectedOptions)}
+              disabled={completed || selectedOptions.length === 0}
+            >
+              {completed ? "Respuesta registrada ✓" : interaction.ctaLabel}
+            </Button>
+          )}
+        </>
+      )}
+
+      {completed && (
+        <p className="mt-3 text-xs text-white/55" aria-live="polite">
+          {narrationFinished
+            ? "Continuamos con la clase."
+            : "Respuesta registrada. Continuaremos al terminar la narración."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function FeedbackSummary({
+  lesson,
+  responses,
+}: {
+  lesson: LessonDefinition;
+  responses: Readonly<Record<number, LessonResponse>>;
+}) {
+  const answered = Object.entries(responses).flatMap(([index, response]) => {
+    const slide = lesson.slides[Number(index)];
+    return slide?.interaction && slide.interaction.kind !== "ready"
+      ? [{ slide, interaction: slide.interaction, response }]
+      : [];
+  });
+
+  if (!answered.length) return null;
+
+  return (
+    <div className="absolute inset-4 z-50 overflow-y-auto rounded-2xl bg-[#faf8f2]/95 p-5 text-[#21170f] shadow-2xl backdrop-blur-lg sm:inset-8 sm:p-7">
+      <p className="text-[9px] font-bold uppercase tracking-[.2em] text-[#a94d20]">
+        Feedback de la clase
+      </p>
+      <h3 className="mt-2 font-serif text-3xl tracking-[-.04em]">Así te fue</h3>
+      <div className="mt-5 grid gap-4">
+        {answered.map(({ interaction, response }, index) => (
+          <article
+            className="border-t border-black/10 pt-4 first:border-0 first:pt-0"
+            key={`${interaction.prompt}-${index}`}
+          >
+            <div className="flex items-start gap-3">
+              <span
+                className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-full ${
+                  response.correct
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-red-100 text-red-700"
+                }`}
+                aria-hidden="true"
+              >
+                {response.correct ? <CheckIcon /> : <Cross2Icon />}
+              </span>
+              <div>
+                <strong className="block text-sm">
+                  {response.correct
+                    ? "Respuesta correcta"
+                    : "Respuesta incorrecta"}
+                </strong>
+                <p className="mt-1 text-sm leading-relaxed text-black/65">
+                  {interaction.prompt}
+                </p>
+              </div>
+            </div>
+            <dl className="mt-3 grid gap-1 pl-10 text-xs">
+              <div>
+                <dt className="inline font-bold">Tu respuesta: </dt>
+                <dd className="inline text-black/60">
+                  {response.selectedOptionIndexes
+                    .map((optionIndex) => interaction.options[optionIndex])
+                    .join(", ")}
+                </dd>
+              </div>
+              {!response.correct && (
+                <div>
+                  <dt className="inline font-bold">Respuesta correcta: </dt>
+                  <dd className="inline text-black/60">
+                    {interaction.correctOptionIndexes
+                      .map((optionIndex) => interaction.options[optionIndex])
+                      .join(", ")}
+                  </dd>
+                </div>
+              )}
+            </dl>
+            <p className="mt-3 pl-10 text-xs leading-relaxed text-black/55">
+              {interaction.explanation}
+            </p>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function formatDuration(milliseconds: number) {
   const seconds = Math.max(0, Math.round(milliseconds / 1_000));
   const minutes = Math.floor(seconds / 60);
@@ -518,9 +710,11 @@ function formatDuration(milliseconds: number) {
 export function LessonPlayer({
   lesson,
   onBack,
+  shareUrl,
 }: {
   lesson: LessonDefinition;
   onBack: () => void;
+  shareUrl?: string;
 }) {
   const [started, setStarted] = useState(false);
   const [slideIndex, setSlideIndex] = useState(0);
@@ -530,17 +724,26 @@ export function LessonPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [maxReachedTime, setMaxReachedTime] = useState(0);
-  const [interactionCompleted, setInteractionCompleted] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
+  const [completedInteractions, setCompletedInteractions] = useState<
+    ReadonlySet<number>
+  >(new Set());
+  const [responses, setResponses] = useState<Record<number, LessonResponse>>(
+    {},
+  );
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
+  const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "error">(
+    "idle",
+  );
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const requestRef = useRef(0);
   const animationFrameRef = useRef(0);
   const maxReachedTimeRef = useRef(0);
-  const interactionCompletedRef = useRef(false);
+  const completedInteractionsRef = useRef(new Set<number>());
+  const mutedRef = useRef(false);
   const narrationFinishedRef = useRef(false);
   const narrationTimerRef = useRef<number | null>(null);
-  const interactionSlideIndex = lesson.slides.findIndex((slide) =>
-    slide.events.some((event) => event.kind === "interaction"),
-  );
 
   useEffect(
     () => () => {
@@ -574,8 +777,8 @@ export function LessonPlayer({
     setCurrentTime(0);
     setDuration(0);
     setMaxReachedTime(0);
-    setInteractionCompleted(false);
-    interactionCompletedRef.current = false;
+    setSelectedOptions([]);
+    setFeedbackVisible(false);
     narrationFinishedRef.current = false;
     maxReachedTimeRef.current = 0;
   };
@@ -600,6 +803,7 @@ export function LessonPlayer({
     const audio = new Audio(audioUrl);
     audio.preload = "auto";
     audio.playbackRate = 1;
+    audio.muted = mutedRef.current;
     audioRef.current = audio;
 
     const updateClock = () => {
@@ -642,15 +846,20 @@ export function LessonPlayer({
       setMaxReachedTime(audio.duration);
       setState("finished");
 
-      const isInteractionSlide = index === interactionSlideIndex;
+      const isInteractionSlide = Boolean(lesson.slides[index]?.interaction);
       const canAdvance =
         !isInteractionSlide ||
-        canContinueFromInteraction(true, interactionCompletedRef.current);
+        canContinueFromInteraction(
+          true,
+          completedInteractionsRef.current.has(index),
+        );
       if (canAdvance && index < lesson.slides.length - 1) {
         const nextIndex = index + 1;
         setSlideIndex(nextIndex);
         resetPlayback();
         schedule(() => void narrate(nextIndex, selectedVoice));
+      } else if (index === lesson.slides.length - 1) {
+        setFeedbackVisible(true);
       }
     };
 
@@ -680,6 +889,7 @@ export function LessonPlayer({
       audio.currentTime = 0;
       narrationFinishedRef.current = false;
       setCurrentTime(0);
+      setFeedbackVisible(false);
     }
     try {
       await audio.play();
@@ -707,28 +917,61 @@ export function LessonPlayer({
     lesson.slides[slideIndex].events,
     currentTime,
   );
+  const interaction = lesson.slides[slideIndex].interaction;
   const interactionVisible =
-    slideIndex === interactionSlideIndex && visibleEvents.has("interaction");
+    Boolean(interaction) && visibleEvents.has("interaction");
+  const interactionCompleted = completedInteractions.has(slideIndex);
   const status =
-    state === "loading"
-      ? "Preparando audio…"
-      : state === "playing"
-        ? "Narrando"
-        : state === "paused"
-          ? "En pausa"
-          : state === "finished"
-            ? "Narración completa"
-            : "Audio listo";
+    muted && started
+      ? "Narración silenciada"
+      : state === "loading"
+        ? "Preparando audio…"
+        : state === "playing"
+          ? "Narrando"
+          : state === "paused"
+            ? "En pausa"
+            : state === "finished"
+              ? "Narración completa"
+              : "Audio listo";
 
-  const completeInteraction = () => {
-    interactionCompletedRef.current = true;
-    setInteractionCompleted(true);
+  const completeInteraction = (optionIndexes: readonly number[] = []) => {
+    if (!interaction || completedInteractionsRef.current.has(slideIndex)) {
+      return;
+    }
+    const selected = [...optionIndexes];
+    completedInteractionsRef.current.add(slideIndex);
+    setCompletedInteractions(new Set(completedInteractionsRef.current));
+    setSelectedOptions(selected);
+    if (interaction.kind !== "ready") {
+      setResponses((current) => ({
+        ...current,
+        [slideIndex]: {
+          selectedOptionIndexes: selected,
+          correct: sameOptions(selected, interaction.correctOptionIndexes),
+        },
+      }));
+    }
     if (!canContinueFromInteraction(narrationFinishedRef.current, true)) return;
     const nextIndex = slideIndex + 1;
     if (nextIndex >= lesson.slides.length) return;
     setSlideIndex(nextIndex);
     resetPlayback();
     schedule(() => void narrate(nextIndex));
+  };
+
+  const toggleOption = (optionIndex: number) => {
+    setSelectedOptions((current) =>
+      current.includes(optionIndex)
+        ? current.filter((value) => value !== optionIndex)
+        : [...current, optionIndex],
+    );
+  };
+
+  const toggleMute = () => {
+    const nextMuted = !mutedRef.current;
+    mutedRef.current = nextMuted;
+    setMuted(nextMuted);
+    if (audioRef.current) audioRef.current.muted = nextMuted;
   };
 
   const restartSlide = () => {
@@ -739,15 +982,63 @@ export function LessonPlayer({
     schedule(() => void narrate(slideIndex));
   };
 
+  const shareLesson = async () => {
+    if (!shareUrl) return;
+    setShareStatus("idle");
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: lesson.title,
+          text: "Mira esta clase interactiva en Rukai.",
+          url: shareUrl,
+        });
+        return;
+      } catch (caught) {
+        if (caught instanceof DOMException && caught.name === "AbortError")
+          return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareStatus("copied");
+    } catch {
+      setShareStatus("error");
+    }
+  };
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#f2dfbf,transparent_35%),#ebe4d5] px-3 py-5 sm:px-6 sm:py-8">
       <div className="mx-auto max-w-[1320px]">
-        <button
-          className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-black/55 transition hover:text-black"
-          onClick={onBack}
-        >
-          <ArrowLeftIcon /> Todas las clases
-        </button>
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <button
+            className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-black/55 transition hover:text-black"
+            onClick={onBack}
+          >
+            <ArrowLeftIcon /> Todas las clases
+          </button>
+          {shareUrl && (
+            <div>
+              <span className="sr-only" aria-live="polite">
+                {shareStatus === "copied"
+                  ? "Enlace copiado"
+                  : shareStatus === "error"
+                    ? "No pudimos copiar el enlace"
+                    : ""}
+              </span>
+              <button
+                className="inline-flex min-h-10 items-center gap-2 rounded-full border border-black/10 bg-[#faf8f2]/80 px-4 text-sm font-semibold text-black/65 shadow-sm transition hover:border-black/20 hover:bg-[#faf8f2]"
+                onClick={() => void shareLesson()}
+              >
+                <Share1Icon />
+                {shareStatus === "copied"
+                  ? "Enlace copiado"
+                  : shareStatus === "error"
+                    ? "Reintentar"
+                    : "Compartir"}
+              </button>
+            </div>
+          )}
+        </div>
 
         <section
           className="mb-3 grid gap-2 sm:grid-cols-3"
@@ -791,7 +1082,9 @@ export function LessonPlayer({
               <p className="mt-3 text-[10px] uppercase tracking-[.12em] text-black/45">
                 {lesson.slides[slideIndex].phase === "intro"
                   ? "Introducción"
-                  : "Profundización"}{" "}
+                  : lesson.slides[slideIndex].phase === "closing"
+                    ? "Cierre"
+                    : "Contenido"}{" "}
                 · {String(slideIndex + 1).padStart(2, "0")} /{" "}
                 {String(lesson.slides.length).padStart(2, "0")}
               </p>
@@ -807,9 +1100,9 @@ export function LessonPlayer({
 
             <div className="mt-8 flex items-center gap-3 border-y border-black/10 py-4">
               <span
-                className={`voice-dot grid size-9 shrink-0 place-items-center rounded-full ${state === "playing" ? "is-playing bg-[#c8672e]/10 text-[#c8672e]" : "bg-black/5 text-black/45"}`}
+                className={`voice-dot grid size-9 shrink-0 place-items-center rounded-full ${state === "playing" && !muted ? "is-playing bg-[#c8672e]/10 text-[#c8672e]" : "bg-black/5 text-black/45"}`}
               >
-                <SpeakerLoudIcon />
+                {muted ? <SpeakerOffIcon /> : <SpeakerLoudIcon />}
               </span>
               <span>
                 <strong className="block text-xs">{status}</strong>
@@ -841,14 +1134,26 @@ export function LessonPlayer({
               )}
             </div>
 
-            <Button
-              className="mt-7 h-11 w-full gap-2 rounded-xl lg:mt-auto"
-              onClick={() => void toggleAudio()}
-              disabled={!started || state === "loading" || state === "error"}
-            >
-              {state === "playing" ? <PauseIcon /> : <PlayIcon />}
-              {state === "playing" ? "Pausar narración" : "Reanudar narración"}
-            </Button>
+            <div className="mt-7 grid gap-2 lg:mt-auto">
+              <Button
+                variant="outline"
+                className="h-11 w-full gap-2 rounded-xl bg-transparent"
+                onClick={toggleMute}
+              >
+                {muted ? <SpeakerLoudIcon /> : <SpeakerOffIcon />}
+                {muted ? "Activar narración" : "Silenciar narración"}
+              </Button>
+              <Button
+                className="h-11 w-full gap-2 rounded-xl"
+                onClick={() => void toggleAudio()}
+                disabled={!started || state === "loading" || state === "error"}
+              >
+                {state === "playing" ? <PauseIcon /> : <PlayIcon />}
+                {state === "playing"
+                  ? "Pausar narración"
+                  : "Reanudar narración"}
+              </Button>
+            </div>
           </aside>
 
           <div className="lesson-canvas group relative min-h-[500px] overflow-hidden rounded-[20px] bg-[#17120d] text-[#fffaf0] sm:aspect-video">
@@ -920,32 +1225,19 @@ export function LessonPlayer({
               />
             )}
 
-            {interactionVisible && (
-              <div className="slide-interactive timeline-element is-visible absolute inset-x-5 bottom-24 z-20 flex flex-col gap-4 rounded-2xl border border-white/15 bg-[#19120c]/90 p-4 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-[9px] font-bold uppercase tracking-[.2em] text-[#dfa763]">
-                    Tu turno
-                  </p>
-                  <h3 className="mt-1 font-serif text-2xl">
-                    {interactionCompleted
-                      ? "Respuesta registrada"
-                      : "¿Listo para continuar?"}
-                  </h3>
-                  <small className="mt-1 block text-xs text-white/55">
-                    {state === "finished"
-                      ? "La narración terminó. Confirma para continuar."
-                      : "Puedes responder mientras termina la narración."}
-                  </small>
-                </div>
-                <Button
-                  size="lg"
-                  className="h-12 rounded-full bg-[#df7c3d] px-8 text-[#160e08] hover:bg-[#ef955b]"
-                  onClick={completeInteraction}
-                  disabled={interactionCompleted}
-                >
-                  {interactionCompleted ? "Listo ✓" : "Listo →"}
-                </Button>
-              </div>
+            {interactionVisible && interaction && (
+              <InteractionPanel
+                interaction={interaction}
+                completed={interactionCompleted}
+                selectedOptions={selectedOptions}
+                narrationFinished={narrationFinishedRef.current}
+                onToggleOption={toggleOption}
+                onSubmit={completeInteraction}
+              />
+            )}
+
+            {feedbackVisible && (
+              <FeedbackSummary lesson={lesson} responses={responses} />
             )}
 
             {error && (

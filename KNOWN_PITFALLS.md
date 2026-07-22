@@ -19,3 +19,7 @@
 - Keep the lesson timeline hidden until the canvas itself is hovered. Hovering or focusing a slide interaction must not reveal the timeline over that control.
 - Generated slides must favor strong foreground/background contrast, keep lists as single-column vertical sequences, and use spacing or subtle separators before bordered cards, pills, or repeated containers.
 - Deleting a class must also delete its slide documents, generation logs, images, and audio. Generation must stop persisting new slides when the parent class no longer exists.
+- Keep each generated interaction prompt verbatim inside its slide narration and align the interaction event to that prompt; visually revealing an independently worded question breaks audio-scene synchronization.
+- Persist a submitted answer in player state before advancing and never clear that submission when a slide restarts; otherwise a learner can answer the same interaction more than once.
+- Muting must set the active and future audio elements to `muted`, not pause playback; pausing stops the timeline and prevents the guided class from continuing.
+- Public class links must load the class directly by ID instead of depending on the limited Home catalog, and the host must rewrite deep SPA routes to `index.html`.

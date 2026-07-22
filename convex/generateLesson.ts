@@ -39,11 +39,13 @@ const RATES = {
 export const LESSON_SYSTEM_PROMPT = `Eres el agente de autoría de Rukai. Diseñas clases visuales, narradas, interactivas y adaptables en español latino neutro.
 
 Principios de la clase:
-- Produce exactamente cinco diapositivas: máximo tres de introducción y dos de profundización.
+- Produce exactamente cinco diapositivas: una introducción, tres de contenido principal y un cierre.
 - La clase debe sentirse como una presentación guiada que avanza como un video, no como texto repartido en tarjetas.
 - Cada diapositiva combina una escena visual, un fragmento de narración y apariciones coherentes con lo narrado.
-- Empieza con una introducción articulada. La tercera diapositiva formula una pregunta natural de preparación para que Rukai muestre el único botón "Listo" de la clase.
-- Después de "Listo", las dos diapositivas restantes profundizan en un subtema concreto y coherente.
+- La introducción termina con una invitación breve a comenzar. Decide libremente cómo formularla y cómo nombrar el CTA; evita repetir mecánicamente "¿estás listo para...?". interaction.kind debe ser ready y su prompt debe aparecer con la misma redacción dentro de narration.
+- Las tres diapositivas de contenido desarrollan una secuencia pedagógica coherente. La última termina con una pregunta que comprueba comprensión y usa interaction.kind single_choice, true_false o multiple_choice.
+- El enunciado completo de esa pregunta debe aparecer con la misma redacción dentro de narration para que Rukai lo sincronice con el audio. single_choice tiene cuatro opciones y una correcta; true_false tiene exactamente Verdadero y Falso; multiple_choice tiene cuatro opciones y entre dos y tres correctas.
+- La diapositiva final cierra el tema sin pedir una nueva respuesta. Rukai mostrará después el feedback de la pregunta contestada.
 - Las listas, datos, tablas, diagramas, imágenes y vectores deben aclarar lo narrado; nunca son decoración gratuita.
 - La narración debe sonar cálida, clara, pedagógica y cinematográfica, con pausas naturales.
 - El estudiante debe poder retroceder en el tiempo: por eso toda aparición se expresa como un evento declarativo vinculado al audio real.
@@ -64,7 +66,10 @@ Dirección visual obligatoria:
 
 Contrato de salida:
 - theme es una de ember-ocean, plum-sage o cobalt-sand.
-- slides[0..2].phase = "intro" y slides[3..4].phase = "topic".
+- slides[0].phase = "intro", slides[1..3].phase = "content" y slides[4].phase = "closing".
+- Todas las slides incluyen interaction. En slides sin interacción usa kind none y deja prompt, ctaLabel y explanation vacíos y los arreglos vacíos.
+- En la intro, interaction usa kind ready, prompt y ctaLabel naturales, y los arreglos vacíos.
+- En la tercera slide de contenido, interaction contiene la pregunta, sus opciones, correctOptionIndexes y una explicación breve para el feedback final.
 - Usa una disposición diferente entre hero, split, focus, cards y chain, sin repetir.
 - Cada narración debe tener entre 55 y 95 palabras para que las apariciones sean alcanzables.
 - No incluyas eventos, timestamps ni frases de sincronización: Rukai derivará las apariciones del contenido y las alineará semánticamente contra la transcripción temporizada del MP3 terminado.
@@ -111,9 +116,13 @@ const lessonSchema = {
           "narration",
           "imagePrompt",
           "content",
+          "interaction",
         ],
         properties: {
-          phase: { type: "string", enum: ["intro", "topic"] },
+          phase: {
+            type: "string",
+            enum: ["intro", "content", "closing"],
+          },
           layout: {
             type: "string",
             enum: ["hero", "split", "focus", "cards", "chain"],
@@ -144,6 +153,45 @@ const lessonSchema = {
                 value: { type: "string" },
                 detail: { type: "string" },
               },
+            },
+          },
+          interaction: {
+            type: "object",
+            additionalProperties: false,
+            required: [
+              "kind",
+              "prompt",
+              "ctaLabel",
+              "options",
+              "correctOptionIndexes",
+              "explanation",
+            ],
+            properties: {
+              kind: {
+                type: "string",
+                enum: [
+                  "none",
+                  "ready",
+                  "single_choice",
+                  "true_false",
+                  "multiple_choice",
+                ],
+              },
+              prompt: { type: "string" },
+              ctaLabel: { type: "string" },
+              options: {
+                type: "array",
+                minItems: 0,
+                maxItems: 4,
+                items: { type: "string" },
+              },
+              correctOptionIndexes: {
+                type: "array",
+                minItems: 0,
+                maxItems: 3,
+                items: { type: "integer", minimum: 0, maximum: 3 },
+              },
+              explanation: { type: "string" },
             },
           },
         },
@@ -177,7 +225,7 @@ function alignmentSchema(eventIds: string[]) {
 }
 
 type GeneratedSlide = {
-  phase: "intro" | "topic";
+  phase: "intro" | "content" | "closing";
   layout: "hero" | "split" | "focus" | "cards" | "chain";
   tone: "dark" | "light" | "accent" | "muted";
   visualKind: "image" | "list" | "stats" | "chart" | "table" | "diagram";
@@ -187,6 +235,16 @@ type GeneratedSlide = {
   narration: string;
   imagePrompt: string;
   content: Array<{ label: string; value: string; detail: string }>;
+  interaction: GeneratedInteraction;
+};
+
+type GeneratedInteraction = {
+  kind: "none" | "ready" | "single_choice" | "true_false" | "multiple_choice";
+  prompt: string;
+  ctaLabel: string;
+  options: string[];
+  correctOptionIndexes: number[];
+  explanation: string;
 };
 
 type GeneratedLesson = {
@@ -201,6 +259,15 @@ type Usage = {
   outputTokens: number;
   costUsd: number;
 };
+
+function normalizedText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("es")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
 
 export function getGeneratedLessonError(
   value: unknown,
@@ -246,7 +313,8 @@ export function getGeneratedLessonError(
 
   for (const [index, slide] of slides.entries()) {
     const prefix = `Diapositiva ${index + 1}:`;
-    const expectedPhase = index < 3 ? "intro" : "topic";
+    const expectedPhase =
+      index === 0 ? "intro" : index === SLIDE_COUNT - 1 ? "closing" : "content";
     if (slide.phase !== expectedPhase) {
       return `${prefix} phase ${String(slide.phase)}; se esperaba ${expectedPhase}.`;
     }
@@ -285,6 +353,9 @@ export function getGeneratedLessonError(
     }
     if (!Array.isArray(slide.content))
       return `${prefix} content no es un arreglo.`;
+    if (!slide.interaction || typeof slide.interaction !== "object") {
+      return `${prefix} interaction no es un objeto.`;
+    }
     const wordCount = slide.narration.trim().split(/\s+/).length;
     const titleWordCount = slide.title.trim().split(/\s+/).length;
     const bodyWordCount = slide.body.trim()
@@ -318,6 +389,108 @@ export function getGeneratedLessonError(
     ) {
       return `${prefix} un elemento de content tiene campos inválidos.`;
     }
+
+    const interaction = slide.interaction as Partial<GeneratedInteraction>;
+    const expectedInteraction =
+      index === 0 ? "ready" : index === SLIDE_COUNT - 2 ? "question" : "none";
+    const questionKinds = ["single_choice", "true_false", "multiple_choice"];
+    if (
+      !interaction.kind ||
+      !["none", "ready", ...questionKinds].includes(interaction.kind)
+    ) {
+      return `${prefix} interaction.kind inválido: ${String(interaction.kind)}.`;
+    }
+    if (
+      (expectedInteraction === "ready" && interaction.kind !== "ready") ||
+      (expectedInteraction === "none" && interaction.kind !== "none") ||
+      (expectedInteraction === "question" &&
+        !questionKinds.includes(interaction.kind))
+    ) {
+      return `${prefix} interaction.kind ${interaction.kind}; se esperaba ${expectedInteraction}.`;
+    }
+    if (
+      typeof interaction.prompt !== "string" ||
+      typeof interaction.ctaLabel !== "string" ||
+      typeof interaction.explanation !== "string" ||
+      !Array.isArray(interaction.options) ||
+      !Array.isArray(interaction.correctOptionIndexes)
+    ) {
+      return `${prefix} interaction tiene campos inválidos.`;
+    }
+    if (interaction.kind === "none") {
+      if (
+        interaction.prompt ||
+        interaction.ctaLabel ||
+        interaction.explanation ||
+        interaction.options.length ||
+        interaction.correctOptionIndexes.length
+      ) {
+        return `${prefix} interaction none debe tener sus campos vacíos.`;
+      }
+    } else {
+      if (!interaction.prompt.trim() || !interaction.ctaLabel.trim()) {
+        return `${prefix} interaction necesita prompt y ctaLabel.`;
+      }
+      if (
+        !normalizedText(slide.narration).includes(
+          normalizedText(interaction.prompt),
+        )
+      ) {
+        return `${prefix} narration no contiene el enunciado exacto de interaction.prompt.`;
+      }
+    }
+    if (interaction.kind === "ready") {
+      if (
+        interaction.options.length ||
+        interaction.correctOptionIndexes.length ||
+        interaction.explanation
+      ) {
+        return `${prefix} la invitación ready no debe contener respuestas.`;
+      }
+    }
+    if (questionKinds.includes(interaction.kind)) {
+      const expectedOptionCount = interaction.kind === "true_false" ? 2 : 4;
+      const optionCount = interaction.options.length;
+      if (optionCount !== expectedOptionCount) {
+        return `${prefix} ${interaction.kind} necesita ${expectedOptionCount} opciones.`;
+      }
+      if (
+        interaction.options.some((option) => !option.trim()) ||
+        new Set(interaction.options).size !== interaction.options.length
+      ) {
+        return `${prefix} las opciones deben ser únicas y no pueden estar vacías.`;
+      }
+      if (!interaction.explanation.trim()) {
+        return `${prefix} la pregunta necesita explanation para el feedback.`;
+      }
+      if (
+        new Set(interaction.correctOptionIndexes).size !==
+          interaction.correctOptionIndexes.length ||
+        interaction.correctOptionIndexes.some(
+          (optionIndex) =>
+            !Number.isInteger(optionIndex) ||
+            optionIndex < 0 ||
+            optionIndex >= optionCount,
+        )
+      ) {
+        return `${prefix} correctOptionIndexes contiene índices inválidos o repetidos.`;
+      }
+      const correctCount = interaction.correctOptionIndexes.length;
+      if (
+        (interaction.kind !== "multiple_choice" && correctCount !== 1) ||
+        (interaction.kind === "multiple_choice" &&
+          (correctCount < 2 || correctCount > 3))
+      ) {
+        return `${prefix} ${interaction.kind} tiene ${correctCount} respuestas correctas.`;
+      }
+      if (
+        interaction.kind === "true_false" &&
+        (interaction.options[0] !== "Verdadero" ||
+          interaction.options[1] !== "Falso")
+      ) {
+        return `${prefix} true_false debe usar las opciones Verdadero y Falso, en ese orden.`;
+      }
+    }
     if (index > 0 && slide.tone === slides[index - 1].tone) {
       return `${prefix} repite el tone de la diapositiva anterior.`;
     }
@@ -331,7 +504,7 @@ function getVisibleText(slide: GeneratedSlide, eventId: string) {
   if (eventId === "title") return slide.title;
   if (eventId === "body") return slide.body;
   if (eventId === "visual") return `${slide.title}. ${slide.imagePrompt}`;
-  if (eventId === "interaction") return "Pregunta interactiva. Botón Listo.";
+  if (eventId === "interaction") return slide.interaction.prompt;
   const contentIndex = Number(eventId.replace("content-", ""));
   const item = slide.content[contentIndex];
   return item
@@ -339,10 +512,7 @@ function getVisibleText(slide: GeneratedSlide, eventId: string) {
     : eventId;
 }
 
-function getAuthoredEvents(
-  slide: GeneratedSlide,
-  slideIndex: number,
-): AuthoredEvent[] {
+function getAuthoredEvents(slide: GeneratedSlide): AuthoredEvent[] {
   const ids = [
     "eyebrow",
     "title",
@@ -350,7 +520,7 @@ function getAuthoredEvents(
     ...(slide.visualKind === "image"
       ? ["visual"]
       : slide.content.map((_, contentIndex) => `content-${contentIndex}`)),
-    ...(slideIndex === 2 ? ["interaction"] : []),
+    ...(slide.interaction.kind !== "none" ? ["interaction"] : []),
   ];
 
   return ids.map((id) => ({
@@ -474,7 +644,7 @@ export const run = internalAction({
       });
 
       for (const [index, slide] of parsed.slides.entries()) {
-        const slideEvents = getAuthoredEvents(slide, index);
+        const slideEvents = getAuthoredEvents(slide);
         let imageStorageId: Id<"_storage"> | undefined;
         if (slide.visualKind === "image") {
           await ctx.runMutation(internal.classes.recordStep, {
@@ -647,6 +817,18 @@ export const run = internalAction({
           facts: slide.content.map((item) => item.label),
           content: slide.content,
           events: synchronizedEvents,
+          ...(slide.interaction.kind !== "none"
+            ? {
+                interaction: {
+                  kind: slide.interaction.kind,
+                  prompt: slide.interaction.prompt,
+                  ctaLabel: slide.interaction.ctaLabel,
+                  options: slide.interaction.options,
+                  correctOptionIndexes: slide.interaction.correctOptionIndexes,
+                  explanation: slide.interaction.explanation,
+                },
+              }
+            : {}),
           ...(imageStorageId ? { imageStorageId } : {}),
           audioStorageId,
           audioDurationSeconds: speechUsage.durationSeconds,

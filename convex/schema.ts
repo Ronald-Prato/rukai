@@ -1,6 +1,20 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+const interaction = v.object({
+  kind: v.union(
+    v.literal("ready"),
+    v.literal("single_choice"),
+    v.literal("true_false"),
+    v.literal("multiple_choice"),
+  ),
+  prompt: v.string(),
+  ctaLabel: v.string(),
+  options: v.array(v.string()),
+  correctOptionIndexes: v.array(v.number()),
+  explanation: v.string(),
+});
+
 export default defineSchema({
   classes: defineTable({
     title: v.string(),
@@ -37,7 +51,12 @@ export default defineSchema({
   classSlides: defineTable({
     classId: v.id("classes"),
     order: v.number(),
-    phase: v.union(v.literal("intro"), v.literal("topic")),
+    phase: v.union(
+      v.literal("intro"),
+      v.literal("content"),
+      v.literal("closing"),
+      v.literal("topic"),
+    ),
     layout: v.union(
       v.literal("hero"),
       v.literal("split"),
@@ -85,6 +104,7 @@ export default defineSchema({
         kind: v.union(v.literal("reveal"), v.literal("interaction")),
       }),
     ),
+    interaction: v.optional(interaction),
     imageStorageId: v.optional(v.id("_storage")),
     audioStorageId: v.id("_storage"),
     audioDurationSeconds: v.number(),

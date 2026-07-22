@@ -175,11 +175,29 @@ const eventValidator = v.object({
   kind: v.union(v.literal("reveal"), v.literal("interaction")),
 });
 
+const interactionValidator = v.object({
+  kind: v.union(
+    v.literal("ready"),
+    v.literal("single_choice"),
+    v.literal("true_false"),
+    v.literal("multiple_choice"),
+  ),
+  prompt: v.string(),
+  ctaLabel: v.string(),
+  options: v.array(v.string()),
+  correctOptionIndexes: v.array(v.number()),
+  explanation: v.string(),
+});
+
 export const saveSlide = internalMutation({
   args: {
     classId: v.id("classes"),
     order: v.number(),
-    phase: v.union(v.literal("intro"), v.literal("topic")),
+    phase: v.union(
+      v.literal("intro"),
+      v.literal("content"),
+      v.literal("closing"),
+    ),
     layout: v.union(
       v.literal("hero"),
       v.literal("split"),
@@ -214,6 +232,7 @@ export const saveSlide = internalMutation({
       }),
     ),
     events: v.array(eventValidator),
+    interaction: v.optional(interactionValidator),
     imageStorageId: v.optional(v.id("_storage")),
     audioStorageId: v.id("_storage"),
     audioDurationSeconds: v.number(),

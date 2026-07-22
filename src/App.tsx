@@ -38,7 +38,7 @@ function GeneratedLesson({ id, onBack }: { id: string; onBack: () => void }) {
       theme: generated.theme ?? "ember-ocean",
       voices: ["marin"],
       slides: generated.slides.map((slide) => ({
-        phase: slide.phase,
+        phase: slide.phase === "topic" ? "content" : slide.phase,
         layout: slide.layout,
         tone: slide.tone ?? "dark",
         visualKind: slide.visualKind ?? (slide.imageUrl ? "image" : "list"),
@@ -55,6 +55,7 @@ function GeneratedLesson({ id, onBack }: { id: string; onBack: () => void }) {
           })),
         facts: slide.facts,
         events: slide.events,
+        interaction: slide.interaction,
         imageUrl: slide.imageUrl ?? undefined,
         audioByVoice: slide.audioUrl ? { marin: slide.audioUrl } : undefined,
       })),
@@ -75,7 +76,13 @@ function GeneratedLesson({ id, onBack }: { id: string; onBack: () => void }) {
     return <CenteredMessage title="Esta clase no existe" onBack={onBack} />;
   }
   if (lesson) {
-    return <LessonPlayer lesson={lesson} onBack={onBack} />;
+    return (
+      <LessonPlayer
+        lesson={lesson}
+        onBack={onBack}
+        shareUrl={`${window.location.origin}/classes/${encodeURIComponent(generated._id)}`}
+      />
+    );
   }
 
   return (
